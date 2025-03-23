@@ -29,7 +29,7 @@ int rightMaxSpeed = 255; // Maximum speed for right motor
 // Sensor definitions
 const uint8_t SensorCount = 3; // Number of IR sensors
 uint16_t sensorValues[SensorCount]; // Array to hold sensor readings
-float sensorWeights[SensorCount] = {0.5, 0.75, 0.5}; // Weights for the sensors to calculate line error
+float sensorWeights[SensorCount] = {1.0, 2.0, 1.0}; // Weights for the sensors to calculate line error
 
 uint16_t readingHistory[SensorCount][HISTORY_SIZE]; // History of sensor readings
 
@@ -38,9 +38,16 @@ uint16_t lineThreshold = 800; // Threshold for line detection
 uint8_t noLineCount = 0; // Counter for consecutive readings without line detection
 
 // PID variables
-float Kp = 1; // Proportional gain
+float Kp = 2.0; // Proportional gain
 float Ki = 0.05; // Integral gain
 float Kd = 0.25; // Derivative gain
+
+#ifdef AGGRESSIVE_PID
+// Aggressive PID Variables
+float AggresiveKp = 4;
+float AggresiveKi = 0.2;
+float AggresiveKd = 1;
+#endif
 
 // PID input and output variables
 float setPointLeft = 0; // Desired setpoint for left motor
@@ -54,6 +61,9 @@ float outputRight = 0; // Output for right PID controller
 // Create PID controllers for left and right motors
 QuickPID leftPid(&inputLeft, &outputLeft, &setPointLeft, Kp, Ki, Kd, QuickPID::Action::direct);
 QuickPID rightPid(&inputRight, &outputRight, &setPointRight, Kp, Ki, Kd, QuickPID::Action::direct);
+
+int prevLeftMotorSpeed = 0;
+int prevRightMotorSpeed = 0;
 
 // Function prototypes
 void readAndCalculateError();
@@ -124,7 +134,7 @@ void readAndCalculateError() {
 
     // Calculate line error and direction based on sensor readings
     for (int i = 0; i < SensorCount; i++) {
-        lineError += (i - 1) * sensorValues[i] * sensorWeights[i]; // Calculate weighted error
+        lineError += (i - 1.5) * sensorValues[i] * sensorWeights[i]; // Calculate weighted error
         if (sensorValues[i] > lineThreshold) { // Check if the sensor reading exceeds the threshold
             lineExists = true; // Line detected
         }
@@ -152,12 +162,32 @@ void recordHistory() {
 
 void calculateMotorSpeed() {
     // Calculate motor speeds based on line error using PID control
-    inputLeft = lineError; // Set input for left motor PID
-    inputRight = lineError; // Set input for right motor PID
+    inputLeft = map(lineError, 0, 50000, 0, 255); // Set input for left motor PID
+    inputRight = map(lineError, 0, -50000, 0, 255 ); // Set input for right motor PID
+
+    #ifdef AGGRESSIVE_PID
+    (inputRight > 200) ? rightPid.SetTunings(AggresiveKp, AggresiveKi, AggresiveKd) : rightPid.SetTunings(Kp, Ki, Kd);
+    (inputLeft > 200) ? leftPid.SetTunings(AggresiveKp, AggresiveKi, AggresiveKd) : leftPid.SetTunings(Kp, Ki, Kd);
+    #endif
 
     leftPid.Compute(); // Compute output for left motor
     rightPid.Compute(); // Compute output for right motor
+
+    // Serial.print("PID Output Left: ");
+    // Serial.println(outputLeft);
+    // Serial.print("PID Output Right: ");
+    // Serial.println(outputRight);
 }
+
+// void calculateMotorSpeed() {
+
+//     // For testing, set fixed outputs
+
+//     outputLeft = 150; // Fixed speed for left motor
+
+//     outputRight = 150; // Fixed speed for right motor
+
+// }
 
 // void setMotorSpeed() {
 //     // Set motor speeds based on PID output
@@ -213,10 +243,10 @@ void print() {
     Serial.print(" | Left Speed: "); // Print left motor speed
     Serial.print(outputLeft); // Print left motor output
     Serial.print(" | Right Speed: "); // Print right motor speed
-    Serial.println(outputRight); // Print right motor output
+    Serial.print(outputRight); // Print right motor output
 
-    Serial.print("Set Goal");
-    Serial.println(setPointLeft);
-    Serial.print("Set Goal");
+    Serial.print(" | Set Goal Left: ");
+    Serial.print(setPointLeft);
+    Serial.print(" | Set Goal Right: ");
     Serial.println(setPointRight);
 }
